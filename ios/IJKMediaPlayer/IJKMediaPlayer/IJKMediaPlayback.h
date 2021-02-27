@@ -31,6 +31,13 @@ typedef NS_ENUM(NSInteger, IJKMPMovieScalingMode) {
     IJKMPMovieScalingModeFill        // Non-uniform scale. Both render dimensions will exactly match the visible bounds
 };
 
+typedef NS_ENUM(NSInteger, IJKMPMovieRotateDegrees) {
+    IJKMPMovieRotateDegrees_0,      // 0 degree, no rotation
+    IJKMPMovieRotateDegrees_90,     // rotate 90 degrees
+    IJKMPMovieRotateDegrees_180,    // rotate 180 degrees
+    IJKMPMovieRotateDegrees_270     // rotate 270 degrees
+};
+
 typedef NS_ENUM(NSInteger, IJKMPMoviePlaybackState) {
     IJKMPMoviePlaybackStateStopped,
     IJKMPMoviePlaybackStatePlaying,
@@ -84,10 +91,14 @@ typedef NS_ENUM(NSInteger, IJKMPMovieTimeOption) {
 @property(nonatomic, readonly)  BOOL isPreparedToPlay;
 @property(nonatomic, readonly)  IJKMPMoviePlaybackState playbackState;
 @property(nonatomic, readonly)  IJKMPMovieLoadState loadState;
+@property(nonatomic, readonly) int isSeekBuffering;
+@property(nonatomic, readonly) int isAudioSync;
+@property(nonatomic, readonly) int isVideoSync;
 
 @property(nonatomic, readonly) int64_t numberOfBytesTransferred;
 
 @property(nonatomic, readonly) CGSize naturalSize;
+@property(nonatomic, readonly) IJKMPMovieRotateDegrees rotateDegrees;
 @property(nonatomic) IJKMPMovieScalingMode scalingMode;
 @property(nonatomic) BOOL shouldAutoplay;
 
@@ -142,18 +153,29 @@ IJK_EXTERN NSString* const IJKMPMoviePlayerIsAirPlayVideoActiveDidChangeNotifica
 // These notifications are posted when the associated movie property becomes available.
 IJK_EXTERN NSString* const IJKMPMovieNaturalSizeAvailableNotification;
 
+// Posted when video rotation property available.
+IJK_EXTERN NSString* const IJKMPMovieRotateAvailableNotification;
+IJK_EXTERN NSString* const IJKMPMovieRotateAvailableNotificationDegreesUserInfoKey; // NSNumber (IJKMPMovieRotateDegrees)
+
 // -----------------------------------------------------------------------------
 //  Extend Notifications
 
 IJK_EXTERN NSString *const IJKMPMoviePlayerVideoDecoderOpenNotification;
 IJK_EXTERN NSString *const IJKMPMoviePlayerFirstVideoFrameRenderedNotification;
 IJK_EXTERN NSString *const IJKMPMoviePlayerFirstAudioFrameRenderedNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerFirstAudioFrameDecodedNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerFirstVideoFrameDecodedNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerOpenInputNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerFindStreamInfoNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerComponentOpenNotification;
 
 IJK_EXTERN NSString *const IJKMPMoviePlayerDidSeekCompleteNotification;
 IJK_EXTERN NSString *const IJKMPMoviePlayerDidSeekCompleteTargetKey;
 IJK_EXTERN NSString *const IJKMPMoviePlayerDidSeekCompleteErrorKey;
 IJK_EXTERN NSString *const IJKMPMoviePlayerDidAccurateSeekCompleteCurPos;
 IJK_EXTERN NSString *const IJKMPMoviePlayerAccurateSeekCompleteNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerSeekAudioStartNotification;
+IJK_EXTERN NSString *const IJKMPMoviePlayerSeekVideoStartNotification;
 
 @end
 
@@ -181,6 +203,7 @@ typedef NS_ENUM(NSInteger, IJKMediaEvent) {
 #define IJKMediaEventAttrKey_time_of_event  @"time_of_event"
 #define IJKMediaEventAttrKey_http_code      @"http_code"
 #define IJKMediaEventAttrKey_offset         @"offset"
+#define IJKMediaEventAttrKey_file_size      @"file_size"
 
 // event of IJKMediaUrlOpenEvent_xxx
 @interface IJKMediaUrlOpenData: NSObject

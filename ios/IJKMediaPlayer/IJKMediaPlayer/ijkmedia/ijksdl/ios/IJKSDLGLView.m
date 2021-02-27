@@ -27,7 +27,6 @@
 #include "ijksdl/ijksdl_timer.h"
 #include "ijksdl/ios/ijksdl_ios.h"
 #include "ijksdl/ijksdl_gles2.h"
-#import "IJKSDLHudViewController.h"
 
 typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     IJKSDLGLViewApplicationUnknownState = 0,
@@ -62,10 +61,14 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     BOOL            _didLockedDueToMovedToWindow;
     BOOL            _shouldLockWhileBeingMovedToWindow;
     NSMutableArray *_registeredNotifications;
+    CAEAGLLayer    *_eaglLayer;
 
-    IJKSDLHudViewController *_hudViewController;
     IJKSDLGLViewApplicationState _applicationState;
 }
+
+@synthesize isThirdGLView              = _isThirdGLView;
+@synthesize scaleFactor                = _scaleFactor;
+@synthesize fps                        = _fps;
 
 + (Class) layerClass
 {
@@ -83,10 +86,8 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
         [self registerApplicationObservers];
 
         _didSetupGL = NO;
-        [self setupGLOnce];
-
-        _hudViewController = [[IJKSDLHudViewController alloc] init];
-        [self addSubview:_hudViewController.tableView];
+        if ([self isApplicationActive] == YES)
+            [self setupGLOnce];
     }
 
     return self;
@@ -140,20 +141,12 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     return YES;
 }
 
-- (CAEAGLLayer *)eaglLayer
-{
-    return (CAEAGLLayer*) self.layer;
-}
-
 - (BOOL)setupGL
 {
     if (_didSetupGL)
         return YES;
 
-    if ([self isApplicationActive] == NO)
-        return NO;
-
-    CAEAGLLayer *eaglLayer = (CAEAGLLayer*) self.layer;
+    CAEAGLLayer *eaglLayer = _eaglLayer;
     eaglLayer.opaque = YES;
     eaglLayer.drawableProperties = [NSDictionary dictionaryWithObjectsAndKeys:
                                     [NSNumber numberWithBool:NO], kEAGLDrawablePropertyRetainedBacking,
@@ -190,12 +183,10 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     if (_didSetupGL)
         return YES;
 
-    if ([self isApplicationActive] == NO)
-        return NO;
-
     if (![self tryLockGLActive])
         return NO;
 
+    _eaglLayer = (CAEAGLLayer*) self.layer;
     BOOL didSetupGL = [self setupGL];
     [self unlockGLActive];
     return didSetupGL;
@@ -212,10 +203,12 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
             UIApplicationState appState = [UIApplication sharedApplication].applicationState;
             switch (appState) {
                 case UIApplicationStateActive:
+                    _applicationState = IJKSDLGLViewApplicationForegroundState;
                     return YES;
                 case UIApplicationStateInactive:
                 case UIApplicationStateBackground:
                 default:
+                    _applicationState = IJKSDLGLViewApplicationBackgroundState;
                     return NO;
             }
         }
@@ -264,17 +257,9 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
 - (void)layoutSubviews
 {
     [super layoutSubviews];
-
-    CGRect selfFrame = self.frame;
-    CGRect newFrame  = selfFrame;
-
-    newFrame.size.width   = selfFrame.size.width * 1 / 3;
-    newFrame.origin.x     = selfFrame.size.width * 2 / 3;
-
-    newFrame.size.height  = selfFrame.size.height * 8 / 8;
-    newFrame.origin.y    += selfFrame.size.height * 0 / 8;
-
-    _hudViewController.tableView.frame = newFrame;
+    if (self.window.screen != nil) {
+        _scaleFactor = self.window.screen.scale;
+    }
     [self invalidateRenderBuffer];
 }
 
@@ -342,9 +327,16 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     [self unlockGLActive];
 }
 
+- (void) display_pixels: (IJKOverlay *) overlay {
+    return;
+}
+
 - (void)display: (SDL_VoutOverlay *) overlay
 {
-    if (![self setupGLOnce])
+    if (_didSetupGL == NO)
+        return;
+
+    if ([self isApplicationActive] == NO)
         return;
 
     if (![self tryLockGLActive]) {
@@ -378,14 +370,14 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
         return;
     }
 
-    [[self eaglLayer] setContentsScale:_scaleFactor];
+    [_eaglLayer setContentsScale:_scaleFactor];
 
     if (_isRenderBufferInvalidated) {
         NSLog(@"IJKSDLGLView: renderbufferStorage fromDrawable\n");
         _isRenderBufferInvalidated = NO;
 
         glBindRenderbuffer(GL_RENDERBUFFER, _renderbuffer);
-        [_context renderbufferStorage:GL_RENDERBUFFER fromDrawable:(CAEAGLLayer*)self.layer];
+        [_context renderbufferStorage:GL_RENDERBUFFER fromDrawable:_eaglLayer];
         glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &_backingWidth);
         glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &_backingHeight);
         IJK_GLES2_Renderer_setGravity(_renderer, _rendererGravity, _backingWidth, _backingHeight);
@@ -507,6 +499,7 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
 - (void)applicationWillEnterForeground
 {
     NSLog(@"IJKSDLGLView:applicationWillEnterForeground: %d", (int)[UIApplication sharedApplication].applicationState);
+    [self setupGLOnce];
     _applicationState = IJKSDLGLViewApplicationForegroundState;
     [self toggleGLPaused:NO];
 }
@@ -514,6 +507,7 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
 - (void)applicationDidBecomeActive
 {
     NSLog(@"IJKSDLGLView:applicationDidBecomeActive: %d", (int)[UIApplication sharedApplication].applicationState);
+    [self setupGLOnce];
     [self toggleGLPaused:NO];
 }
 
@@ -521,6 +515,7 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
 {
     NSLog(@"IJKSDLGLView:applicationWillResignActive: %d", (int)[UIApplication sharedApplication].applicationState);
     [self toggleGLPaused:YES];
+    glFinish();
 }
 
 - (void)applicationDidEnterBackground
@@ -528,6 +523,7 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     NSLog(@"IJKSDLGLView:applicationDidEnterBackground: %d", (int)[UIApplication sharedApplication].applicationState);
     _applicationState = IJKSDLGLViewApplicationBackgroundState;
     [self toggleGLPaused:YES];
+    glFinish();
 }
 
 - (void)applicationWillTerminate
@@ -634,31 +630,8 @@ typedef NS_ENUM(NSInteger, IJKSDLGLViewApplicationState) {
     return image;
 }
 
-#pragma mark IJKFFHudController
-- (void)setHudValue:(NSString *)value forKey:(NSString *)key
-{
-    if ([[NSThread currentThread] isMainThread]) {
-        [_hudViewController setHudValue:value forKey:key];
-    } else {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self setHudValue:value forKey:key];
-        });
-    }
-}
-
 - (void)setShouldLockWhileBeingMovedToWindow:(BOOL)shouldLockWhileBeingMovedToWindow
 {
     _shouldLockWhileBeingMovedToWindow = shouldLockWhileBeingMovedToWindow;
 }
-
-- (void)setShouldShowHudView:(BOOL)shouldShowHudView
-{
-    _hudViewController.tableView.hidden = !shouldShowHudView;
-}
-
-- (BOOL)shouldShowHudView
-{
-    return !_hudViewController.tableView.hidden;
-}
-
 @end
